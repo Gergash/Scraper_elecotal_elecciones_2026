@@ -122,10 +122,17 @@
   },
   "configuracion_scraper": {
     "headless": false,
-    "timeout_pagina": 30000,
+    "timeout_pagina": 10000,
+    "timeout_por_pagina_ms": 10000,
     "delay_entre_requests": 2,
     "intentos_reintento": 3,
     "usar_cache": true,
-    "directorio_cache": "./cache_resultados"
-  }
+    "directorio_cache": "./cache_resultados",
+    "carpeta_backup": "./backup",
+    "pausa_entre_ciclos_segundos": 5
+  },
+  "urls_scraper": [
+    "https://resultados.registraduria.gov.co/",
+    "https://wapp.registraduria.gov.co/electoral/2026/congreso-de-la-republica/"
+  ]
 }

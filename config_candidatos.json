@@ -1,0 +1,131 @@
+{
+  "candidatos_camara": {
+    "VALLE": [
+      {
+        "nombre_completo": "Rigo Vega Cartago",
+        "nombre_normalizado": "rigo_vega_cartago",
+        "departamento": "VALLE"
+      },
+      {
+        "nombre_completo": "Adriana Daraviña",
+        "nombre_normalizado": "adriana_daravina",
+        "departamento": "VALLE"
+      },
+      {
+        "nombre_completo": "Luz Angela Pulido",
+        "nombre_normalizado": "luz_angela_pulido",
+        "departamento": "VALLE"
+      },
+      {
+        "nombre_completo": "Liliana Solano",
+        "nombre_normalizado": "liliana_solano",
+        "departamento": "VALLE"
+      },
+      {
+        "nombre_completo": "Alvaro Pollo Cardona",
+        "nombre_normalizado": "alvaro_pollo_cardona",
+        "departamento": "VALLE"
+      },
+      {
+        "nombre_completo": "Jorge Andres Gonzales",
+        "nombre_normalizado": "jorge_andres_gonzales",
+        "departamento": "VALLE"
+      },
+      {
+        "nombre_completo": "Cristian Hernandez",
+        "nombre_normalizado": "cristian_hernandez",
+        "departamento": "VALLE"
+      },
+      {
+        "nombre_completo": "Cristian Viveros",
+        "nombre_normalizado": "cristian_viveros",
+        "departamento": "VALLE"
+      }
+    ],
+    "RISARALDA": [
+      {
+        "nombre_completo": "Atenea Castro",
+        "nombre_normalizado": "atenea_castro",
+        "departamento": "RISARALDA"
+      }
+    ],
+    "CALDAS": [
+      {
+        "nombre_completo": "Yuliana Giraldo",
+        "nombre_normalizado": "yuliana_giraldo",
+        "departamento": "CALDAS"
+      },
+      {
+        "nombre_completo": "Juan Esteban Tejada",
+        "nombre_normalizado": "juan_esteban_tejada",
+        "departamento": "CALDAS"
+      }
+    ]
+  },
+  "candidato_senado": {
+    "nombre_completo": "Juan Camilo Velez Londoño",
+    "nombre_normalizado": "juan_camilo_velez_londono",
+    "variaciones_nombre": [
+      "Juan Camilo Velez Londoño",
+      "Juan Camilo Vélez Londoño",
+      "Juan C. Velez Londoño",
+      "J.C. Velez Londoño"
+    ]
+  },
+  "departamentos": {
+    "VALLE": {
+      "codigo": "76",
+      "puestos_votacion": 1152,
+      "municipios": [
+        "Andalucía", "Buga", "Bugalagrande", "Calima-El Darién", "El Cerrito",
+        "Ginebra", "Guacarí", "Restrepo", "Riofrío", "San Pedro", "Trujillo",
+        "Yotoco", "Alcalá", "Ansermanuevo", "Argelia", "Bolívar", "Caicedonia",
+        "Cartago", "El Águila", "El Cairo", "El Dovio", "La Unión",
+        "La Victoria", "Obando", "Roldanillo", "Sevilla", "Toro", "Ulloa",
+        "Versalles", "Zarzal", "Cali", "Candelaria", "Jamundí", "La Cumbre",
+        "Palmira", "Pradera", "Vijes", "Yumbo", "Buenaventura", "Dagua", "Florida", "Tuluá"
+      ]
+    },
+    "RISARALDA": {
+      "codigo": "66",
+      "puestos_votacion": 226,
+      "municipios": [
+        "Pereira", "Dosquebradas", "Santa Rosa de Cabal", "Marsella", "Apía",
+        "Balboa", "Belén de Umbría", "Guática", "La Celia", "La Virginia",
+        "Quinchía", "Santuario", "Mistrató", "Pueblo Rico"
+      ]
+    },
+    "CALDAS": {
+      "codigo": "17",
+      "puestos_votacion": 339,
+      "municipios": [
+        "Manizales", "Aguadas", "Anserma", "Aranzazu", "Belalcázar", "Chinchiná",
+        "Filadelfia", "La Dorada", "La Merced", "Manzanares", "Marmato",
+        "Marquetalia", "Marulanda", "Neira", "Norcasia", "Pácora", "Palestina",
+        "Pensilvania", "Riosucio", "Risaralda", "Salamina", "Samaná",
+        "San José", "Supía", "Victoria", "Villamaría", "Viterbo"
+      ]
+    }
+  },
+  "inversiones": {
+    "Rigo Vega Cartago": 0,
+    "Adriana Daraviña": 0,
+    "Luz Angela Pulido": 0,
+    "Liliana Solano": 0,
+    "Alvaro Pollo Cardona": 0,
+    "Jorge Andres Gonzales": 0,
+    "Cristian Hernandez": 0,
+    "Cristian Viveros": 0,
+    "Atenea Castro": 0,
+    "Yuliana Giraldo": 0,
+    "Juan Esteban Tejada": 0
+  },
+  "configuracion_scraper": {
+    "headless": false,
+    "timeout_pagina": 30000,
+    "delay_entre_requests": 2,
+    "intentos_reintento": 3,
+    "usar_cache": true,
+    "directorio_cache": "./cache_resultados"
+  }
+}

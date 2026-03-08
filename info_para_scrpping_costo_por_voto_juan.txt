@@ -1,0 +1,38 @@
+////////////////////////////////////////////////CANDIDATOS A LA CAMARA PARA JUAN
+Rigo Vega Cartago - VALLE - CAMARA
+Adriana Daraviña - VALLE - CAMARA
+Luz Angela Pulido - VALLE - CAMARA
+Liliana Solano - VALLE - CAMARA
+Alvaro Pollo Cardona - VALLE - CAMARA
+Yuliana Giraldo - CALDAS - CAMARA
+Juan Esteban Tejada - CALDAS - CAMARA
+Jorge Andres Gonzales - VALLE - CAMARA
+Atenea Castro - RISARALDA - CAMARA
+Cristian Hernandez - VALLE - CAMARA
+Cristian Viveros - VALLE - CAMARA
+////////////////////////////////////////////////
+puestos de votacion cantidad por municipio
+valle - 1152
+risaralda - 226
+caldas - 339
+
+municipios por departamento:
+VALLE
+Andalucía, Buga, Bugalagrande, Calima-El Darién, El Cerrito, Ginebra, Guacarí, Restrepo, Riofrío, San Pedro, Trujillo, Yotoco.
+Alcalá, Ansermanuevo, Argelia, Bolívar, Caicedonia, Cartago, El Águila, El Cairo, El Dovio, La Unión, La Victoria, Obando, Roldanillo, Sevilla, Toro, Ulloa, Versalles, Zarzal.
+Cali (Capital), Candelaria, Jamundí, La Cumbre, Palmira, Pradera, Vijes, Yumbo.
+Buenaventura.
+Dagua, Florida. Palmira, Tuluá, Cartago, Jamundí y Yumbo
+
+RISARALDA
+Pereira (Capital) Dosquebradas Santa Rosa de Cabal Marsella Apía Balboa Belén de Umbría Guática La Celia La Virginia Quinchía Santuario Mistrató Pueblo Rico 
+
+CALDAS
+Manizales (Capital) Aguadas Anserma Aranzazu Belalcázar Chinchiná Filadelfia La Dorada La Merced Manzanares Marmato Marquetalia Marulanda Neira Norcasia Pácora Palestina Pensilvania Riosucio Risaralda Salamina
+Samaná San José Supía Victoria Villamaría Viterbo 
+
+POBLACION:
+RISARALDA - 974,639
+CALDAS - 1,051,282 
+VALLE - 4,630,000
+

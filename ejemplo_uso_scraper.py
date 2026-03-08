@@ -3,7 +3,7 @@ Ejemplo de uso del scraper de resultados electorales
 """
 
 import asyncio
-from scraper_resultados_electorales_congreso import ScraperResultadosElectorales
+from scrapper import ScraperResultadosElectorales
 from utilidades_scraper import validar_configuracion, generar_reporte_resumen, exportar_a_excel
 import pandas as pd
 import json

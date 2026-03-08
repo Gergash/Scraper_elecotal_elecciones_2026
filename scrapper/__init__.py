@@ -14,6 +14,7 @@ from .lista_conservador import (
 from .config import DEPARTAMENTOS, MUNICIPIOS, PUESTOS_VOTACION
 from .main import main
 from .scraper_mesas import scrape_mesas
+from .comparativa_conservador import run_comparativa, consultar_una_vez
 
 __all__ = [
     'ScraperResultadosElectorales',
@@ -30,4 +31,6 @@ __all__ = [
     'PUESTOS_VOTACION',
     'main',
     'scrape_mesas',
+    'run_comparativa',
+    'consultar_una_vez',
 ]

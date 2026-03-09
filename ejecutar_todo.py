@@ -25,6 +25,7 @@ from scrapper.config import CONFIG
 from scrapper.runner_paralelo import run_loop_continuo, obtener_urls_desde_config
 from scrapper.comparativa_conservador import run_comparativa
 from scrapper.scraper_mesas import scrape_mesas
+from scrapper.scraper_divulgacion_e14 import scrape_divulgacion_e14
 from scrapper.utils import logger
 
 
@@ -57,12 +58,23 @@ async def _tarea_mesas(deptos=None, headless=False, reanudar=True):
     )
 
 
+async def _tarea_divulgacion(headless=False):
+    """Tarea: scraper divulgacione14congreso (SENADO/CAMARA, págs 01/03/04)"""
+    await scrape_divulgacion_e14(
+        corporaciones=["SENADO", "CAMARA"],
+        departamentos_objetivo=None,  # usa VALLE, CALDAS, RISARALDA de config
+        paginas=["01", "03", "04"],
+        headless=headless,
+    )
+
+
 async def main(args):
     logger.info("=" * 60)
-    logger.info("SCRIPT MAESTRO - Tres scrapers en paralelo")
+    logger.info("SCRIPT MAESTRO - Scrapers electorales")
     logger.info("  1. Runner paralelo (4 URLs)")
     logger.info("  2. Comparativa (lista Conservador)")
     logger.info("  3. Scraper mesas (E-14 jerárquico)")
+    logger.info("  4. Scraper divulgación E14 (VALLE, CALDAS, RISARALDA)")
     logger.info("=" * 60)
 
     tareas = [
@@ -78,6 +90,8 @@ async def main(args):
             reanudar=not args.sin_reanudar,
         )),
     ]
+    if not getattr(args, "sin_divulgacion", False):
+        tareas.append(asyncio.create_task(_tarea_divulgacion(headless=args.headless)))
 
     try:
         await asyncio.gather(*tareas)
@@ -102,6 +116,7 @@ def run():
     parser.add_argument("--deptos", nargs="+", default=None, help="Departamentos para mesas (default: todos)")
     parser.add_argument("--headless", action="store_true", help="Navegador sin ventana")
     parser.add_argument("--sin-reanudar", action="store_true", help="Mesas: empezar desde cero")
+    parser.add_argument("--sin-divulgacion", action="store_true", help="No ejecutar scraper divulgación E14")
     args = parser.parse_args()
 
     try:

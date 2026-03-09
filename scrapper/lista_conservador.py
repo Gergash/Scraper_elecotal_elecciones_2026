@@ -1,7 +1,10 @@
 """
 Parser de la lista al Senado del Partido Conservador
-Busca la seccion HTML party-detail-row y extrae resultados para comparar
-el crecimiento de Juan Camilo Vélez Londoño vs el resto de miembros de la lista.
+Extrae candidatos y votos desde el HTML expandido del portal de resultados.
+
+Estructura real del HTML:
+  <span class="rt-Text rt-r-size-3 text-2">NOMBRE CANDIDATO</span>
+  <span class="rt-Text">11.557</span>   <- votos
 """
 
 import csv
@@ -9,7 +12,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from .utils import logger
 
@@ -20,37 +23,24 @@ class CandidatoLista:
     posicion: int
     nombre: str
     votos: int
-    porcentaje: float
+    porcentaje: float = 0.0
 
     def __str__(self):
-        return f"#{self.posicion} {self.nombre}: {self.votos:,} ({self.porcentaje:.2f}%)"
+        return f"#{self.posicion} {self.nombre}: {self.votos:,}"
 
 
-# Selector/patron para identificar la fila de detalle del partido
-PARTY_DETAIL_ROW_CLASS = "party-detail-row"
-CANDIDATO_PATTERN = re.compile(
-    r'<span class="rt-Text">(\d+)\s*-\s*</span>\s*<span class="rt-Text">([^<]+)</span>'
-)
-VOTOS_PATTERN = re.compile(
-    r'<div class="text-center">([\d.]+)</div>'
-)
-PORCENTAJE_PATTERN = re.compile(
-    r'<div class="flex-1 text-center">([\d,]+)%</div>'
+# Patrón real extraído del HTML del portal de resultados
+# <span class="rt-Text rt-r-size-3 text-2">NOMBRE</span><span class="rt-Text">VOTOS</span>
+CANDIDATO_VOTOS_PATTERN = re.compile(
+    r'<span class="rt-Text rt-r-size-3 text-2">([^<]+)</span>\s*<span class="rt-Text">([\d\.]+)</span>'
 )
 
-# Nombre del candidato a trackear (variaciones para matching)
-CANDIDATO_JCV = "JUAN CAMILO VELEZ LONDOÑO"
-CANDIDATO_JCV_VARIACIONES = [
-    "JUAN CAMILO VELEZ LONDOÑO",
-    "JUAN CAMILO VELEZ LONDONO",
-    "JUAN CAMILO VÉLEZ LONDOÑO",
-]
+# Nombre del candidato a trackear
+CANDIDATO_JCV_KEYWORDS = {"JUAN", "CAMILO", "VELEZ"}
 
 
-def _parse_int_votos(texto: str) -> int:
-    """Convierte '1.078' o '10.690' a entero (formato miles con punto)"""
-    if not texto:
-        return 0
+def _parse_votos(texto: str) -> int:
+    """Convierte '11.557' o '70.300' a entero (separador de miles con punto)."""
     limpio = texto.strip().replace(".", "").replace(",", "")
     try:
         return int(limpio)
@@ -58,85 +48,47 @@ def _parse_int_votos(texto: str) -> int:
         return 0
 
 
-def _parse_porcentaje(texto: str) -> float:
-    """Convierte '0,10' o '1,00' a float"""
-    if not texto:
-        return 0.0
-    limpio = texto.strip().replace(",", ".")
-    try:
-        return float(limpio)
-    except ValueError:
-        return 0.0
-
-
 def _es_juan_camilo(nombre: str) -> bool:
-    """Verifica si el nombre corresponde a Juan Camilo Vélez"""
-    nombre_upper = nombre.upper().strip()
-    nombre_norm = nombre_upper.replace("Ñ", "N").replace("É", "E")
-    for var in CANDIDATO_JCV_VARIACIONES:
-        var_norm = var.replace("Ñ", "N").replace("É", "E")
-        if var_norm in nombre_norm or nombre_norm in var_norm:
-            return True
-    # Match por palabras clave
-    palabras = {"JUAN", "CAMILO", "VELEZ", "VELÉZ", "LONDOÑO", "LONDONO"}
-    tiene = sum(1 for p in palabras if p in nombre_upper)
-    return tiene >= 3
+    """Verifica que el nombre contenga JUAN + CAMILO + VELEZ."""
+    nombre_norm = nombre.upper().replace("É", "E").replace("Ñ", "N")
+    return all(k in nombre_norm for k in CANDIDATO_JCV_KEYWORDS)
 
 
 def extraer_candidatos_desde_html(html: str) -> List[CandidatoLista]:
     """
-    Extrae todos los candidatos de la seccion party-detail-row del HTML.
-    Busca bloques rt-Grid y parsea posicion, nombre, votos y porcentaje.
+    Extrae todos los candidatos con sus votos del HTML expandido
+    del Partido Conservador.
+    Retorna lista ordenada por votos descendente con posición asignada.
     """
     candidatos = []
-    vistos = set()  # Evitar duplicados por (pos, nombre)
 
-    # Buscar la fila party-detail-row
-    if PARTY_DETAIL_ROW_CLASS not in html:
-        logger.warning("No se encontro la seccion party-detail-row en el HTML")
-        # Intentar igual si hay rt-Grid
-        if "rt-Grid" not in html:
-            return candidatos
+    for match in CANDIDATO_VOTOS_PATTERN.finditer(html):
+        nombre = match.group(1).strip()
+        votos = _parse_votos(match.group(2))
 
-    # Estrategia: buscar cada aparicion de "N - " seguido del nombre en rt-Text
-    # Luego buscar votos (text-center) y porcentaje (flex-1 text-center) en el bloque
-    for m in CANDIDATO_PATTERN.finditer(html):
-        pos = int(m.group(1))
-        nombre = m.group(2).strip()
-        if not nombre:
+        # Excluir la fila "SOLO POR LA LISTA"
+        if "SOLO POR LA LISTA" in nombre.upper():
             continue
-        # Saltar "SOLO POR LA LISTA"
-        if pos == 0 and "SOLO" in nombre.upper() and "LISTA" in nombre.upper():
-            continue
-        key = (pos, nombre)
-        if key in vistos:
-            continue
-        vistos.add(key)
 
-        # Buscar votos y porcentaje en los proximos 500 caracteres
-        idx = m.end()
-        fragmento = html[idx : idx + 500]
-        votos_m = VOTOS_PATTERN.search(fragmento)
-        pct_m = PORCENTAJE_PATTERN.search(fragmento)
-        votos = _parse_int_votos(votos_m.group(1)) if votos_m else 0
-        pct = _parse_porcentaje(pct_m.group(1)) if pct_m else 0.0
+        if nombre:
+            candidatos.append(CandidatoLista(posicion=0, nombre=nombre, votos=votos))
 
-        candidatos.append(CandidatoLista(
-            posicion=pos,
-            nombre=nombre,
-            votos=votos,
-            porcentaje=pct
-        ))
+    if not candidatos:
+        logger.warning("No se extrajeron candidatos del HTML")
+        return []
 
+    # Ordenar por votos descendente y asignar posición
+    candidatos.sort(key=lambda c: c.votos, reverse=True)
+    for i, c in enumerate(candidatos, 1):
+        c.posicion = i
+
+    logger.info(f"Candidatos extraídos: {len(candidatos)}")
     return candidatos
 
 
 def comparar_jcv_con_lista(candidatos: List[CandidatoLista]) -> dict:
-    """
-    Compara Juan Camilo Vélez con el resto de la lista.
-    Retorna un dict con metricas de comparacion.
-    """
-    jcv = None
+    """Compara Juan Camilo Vélez con el resto de la lista."""
+    jcv: Optional[CandidatoLista] = None
     otros = []
 
     for c in candidatos:
@@ -146,89 +98,47 @@ def comparar_jcv_con_lista(candidatos: List[CandidatoLista]) -> dict:
             otros.append(c)
 
     if not jcv:
-        logger.warning("No se encontro a Juan Camilo Vélez en la lista")
+        logger.warning("No se encontró a Juan Camilo Vélez en la lista")
         return {"encontrado": False, "candidatos_total": len(candidatos)}
 
-    total_votos = sum(c.votos for c in candidatos)
-    votos_solo_candidatos = sum(c.votos for c in otros)  # sin "solo lista"
-
-    # Ranking por votos (entre candidatos individuales)
-    ranking_votos = sorted(otros, key=lambda x: x.votos, reverse=True)
-    posicion_jcv_votos = next((i + 1 for i, c in enumerate(ranking_votos) if c.nombre == jcv.nombre), None)
-    if posicion_jcv_votos is None:
-        posicion_jcv_votos = len(ranking_votos) + 1
-
-    # Candidatos con mas votos que JCV
-    por_encima = [c for c in ranking_votos if c.votos > jcv.votos]
-    por_debajo = [c for c in ranking_votos if c.votos <= jcv.votos]
+    por_encima = [c for c in otros if c.votos > jcv.votos]
+    por_debajo = [c for c in otros if c.votos <= jcv.votos]
 
     return {
         "encontrado": True,
         "jcv": jcv,
         "candidatos_total": len(candidatos),
-        "total_votos_lista": total_votos,
-        "posicion_en_lista": jcv.posicion,
-        "posicion_por_votos": posicion_jcv_votos,
+        "posicion_por_votos": jcv.posicion,
         "votos": jcv.votos,
-        "porcentaje": jcv.porcentaje,
         "candidatos_por_encima": len(por_encima),
         "candidatos_por_debajo": len(por_debajo),
-        "top_5": [c.nombre for c in ranking_votos[:5]],
-        "comparativa": [
-            {
-                "nombre": c.nombre,
-                "posicion": c.posicion,
-                "votos": c.votos,
-                "porcentaje": c.porcentaje,
-                "diferencia_votos_vs_jcv": c.votos - jcv.votos,
-                "ratio_vs_jcv": round(c.votos / jcv.votos, 2) if jcv.votos > 0 else 0,
-            }
-            for c in ranking_votos[:20]  # Top 20 para comparar
-        ],
+        "top_5": [c.nombre for c in candidatos[:5]],
     }
 
 
 def guardar_csv_comparativa(candidatos: List[CandidatoLista], archivo: str) -> Path:
-    """Guarda la lista completa y la comparativa con JCV en CSV."""
-    resultado = comparar_jcv_con_lista(candidatos)
+    """Guarda la lista completa en CSV."""
     base_dir = Path(__file__).resolve().parent.parent
     ruta = base_dir / archivo
-
     with open(ruta, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["Posicion", "Nombre", "Votos", "Porcentaje", "Es_JCV", "Diferencia_vs_JCV", "Ranking_votos"])
-        jcv = resultado.get("jcv")
-        jcv_votos = jcv.votos if jcv else 0
-
-        ranking = sorted(candidatos, key=lambda x: x.votos, reverse=True)
-        rank_map = {c.nombre: i + 1 for i, c in enumerate(ranking)}
-
+        w.writerow(["Posicion_votos", "Nombre", "Votos", "Es_JCV"])
         for c in candidatos:
-            es_jcv = _es_juan_camilo(c.nombre)
-            diff = c.votos - jcv_votos if jcv_votos else 0
-            r = rank_map.get(c.nombre, "-")
-            w.writerow([c.posicion, c.nombre, c.votos, f"{c.porcentaje:.2f}", es_jcv, diff, r])
-
+            w.writerow([c.posicion, c.nombre, c.votos, _es_juan_camilo(c.nombre)])
     logger.info(f"CSV guardado: {ruta}")
     return ruta
 
 
-def parsear_y_comparar(html: str, guardar_csv: bool = True) -> dict:
-    """
-    Flujo completo: parsea HTML, extrae candidatos, compara JCV y opcionalmente guarda CSV.
-    """
+def parsear_y_comparar(html: str, guardar_csv: bool = False) -> dict:
+    """Flujo completo: parsea HTML, extrae candidatos, compara JCV."""
     candidatos = extraer_candidatos_desde_html(html)
     if not candidatos:
-        return {"error": "No se extrajeron candidatos del HTML", "candidatos": []}
+        return {"error": "No se extrajeron candidatos del HTML"}
 
     resultado = comparar_jcv_con_lista(candidatos)
-    logger.info(f"Extraidos {len(candidatos)} candidatos. JCV: {'Encontrado' if resultado.get('encontrado') else 'No encontrado'}")
-
     if resultado.get("encontrado"):
         jcv = resultado["jcv"]
-        logger.info(f"  -> {jcv}")
-        logger.info(f"  -> Posicion por votos: {resultado.get('posicion_por_votos')} de {resultado.get('candidatos_total')}")
-        logger.info(f"  -> Candidatos con mas votos: {resultado.get('candidatos_por_encima')}")
+        logger.info(f"JCV: {jcv} | Posicion: #{jcv.posicion} de {resultado['candidatos_total']}")
 
     if guardar_csv:
         ts = datetime.now().strftime("%Y%m%d_%H%M")

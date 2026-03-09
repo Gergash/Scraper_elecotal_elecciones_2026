@@ -337,8 +337,14 @@ async def navegar_municipio_y_extraer_conservador(
     try:
         await page.goto(URL_CAMARA, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
-    except PlaywrightTimeout:
-        pass
+    except Exception:
+        # Reintentar una vez si la navegación falla (ERR_NETWORK_IO_SUSPENDED, timeout, etc.)
+        try:
+            await page.wait_for_timeout(2000)
+            await page.goto(URL_CAMARA, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
+            await page.wait_for_timeout(3000)
+        except Exception:
+            return []
     if not await _abrir_desplegable_territorios(page):
         return []
     if not await _seleccionar_departamento(page, departamento=departamento):
@@ -420,10 +426,12 @@ async def run_scraper_camara_conservador_por_municipios(
         logger.warning("No hay municipios configurados para %s.", deptos)
         return out_path
 
-    # Sobrescribir CSV en cada ejecución
-    f = open(out_path, "w", newline="", encoding="utf-8-sig")
+    # Append si ya existe (permite reanudar tras un crash), overwrite si es nuevo
+    existe = out_path.exists()
+    f = open(out_path, "a", newline="", encoding="utf-8-sig")
     w = csv.DictWriter(f, fieldnames=CSV_COLS, extrasaction="ignore")
-    w.writeheader()
+    if not existe:
+        w.writeheader()
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(

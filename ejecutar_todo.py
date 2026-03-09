@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""
+Script maestro: ejecuta los tres scrapers en paralelo como tareas asyncio.
+
+1. Runner paralelo (ejecutar_scraper): 4 URLs en pestañas, ciclos continuos
+2. Comparativa (ejecutar_comparativa): lista Conservador, append a comparativa.csv
+3. Scraper mesas (ejecutar_scraper_mesas): navegación jerárquica E-14
+
+Uso:
+    python ejecutar_todo.py
+    python ejecutar_todo.py --ciclos 10 --consultas 20
+    python ejecutar_todo.py --headless
+"""
+
+import argparse
+import asyncio
+import sys
+from pathlib import Path
+
+BASE = Path(__file__).resolve().parent
+if str(BASE) not in sys.path:
+    sys.path.insert(0, str(BASE))
+
+from scrapper.config import CONFIG
+from scrapper.runner_paralelo import run_loop_continuo, obtener_urls_desde_config
+from scrapper.comparativa_conservador import run_comparativa
+from scrapper.scraper_mesas import scrape_mesas
+from scrapper.utils import logger
+
+
+
+async def _tarea_runner(ciclos=None, pausa=5):
+    """Tarea: runner paralelo (4 URLs)"""
+    urls = obtener_urls_desde_config()
+    if not urls:
+        logger.warning("[Runner] No hay URLs en config. Se omite.")
+        return
+    await run_loop_continuo(urls=urls, max_ciclos=ciclos, pausa_entre_ciclos=pausa)
+
+
+async def _tarea_comparativa(consultas=None, intervalo=5, headless=False):
+    """Tarea: comparativa periódica"""
+    await run_comparativa(
+        intervalo_minutos=intervalo,
+        max_consultas=consultas,
+        headless=headless,
+    )
+
+
+async def _tarea_mesas(deptos=None, headless=False, reanudar=True):
+    """Tarea: scraper jerárquico de mesas"""
+    await scrape_mesas(
+        departamentos_objetivo=deptos,
+        headless=headless,
+        reanudar=reanudar,
+        csv_path=None,
+    )
+
+
+async def main(args):
+    logger.info("=" * 60)
+    logger.info("SCRIPT MAESTRO - Tres scrapers en paralelo")
+    logger.info("  1. Runner paralelo (4 URLs)")
+    logger.info("  2. Comparativa (lista Conservador)")
+    logger.info("  3. Scraper mesas (E-14 jerárquico)")
+    logger.info("=" * 60)
+
+    tareas = [
+        asyncio.create_task(_tarea_runner(ciclos=args.ciclos, pausa=args.pausa)),
+        asyncio.create_task(_tarea_comparativa(
+            consultas=args.consultas,
+            intervalo=args.intervalo,
+            headless=args.headless,
+        )),
+        asyncio.create_task(_tarea_mesas(
+            deptos=args.deptos,
+            headless=args.headless,
+            reanudar=not args.sin_reanudar,
+        )),
+    ]
+
+    try:
+        await asyncio.gather(*tareas)
+    except asyncio.CancelledError:
+        logger.info("Tareas canceladas.")
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        for t in tareas:
+            t.cancel()
+        try:
+            await asyncio.gather(*tareas)
+        except asyncio.CancelledError:
+            pass
+
+
+def run():
+    parser = argparse.ArgumentParser(description="Ejecuta los 3 scrapers en paralelo")
+    parser.add_argument("--ciclos", type=int, default=None, help="Máx ciclos del runner (default: infinito)")
+    parser.add_argument("--consultas", type=int, default=None, help="Máx consultas comparativa (default: infinito)")
+    parser.add_argument("--intervalo", type=int, default=5, help="Minutos entre consultas comparativa (default: 5)")
+    parser.add_argument("--pausa", type=int, default=5, help="Segundos entre ciclos del runner (default: 5)")
+    parser.add_argument("--deptos", nargs="+", default=None, help="Departamentos para mesas (default: todos)")
+    parser.add_argument("--headless", action="store_true", help="Navegador sin ventana")
+    parser.add_argument("--sin-reanudar", action="store_true", help="Mesas: empezar desde cero")
+    args = parser.parse_args()
+
+    try:
+        asyncio.run(main(args))
+    except KeyboardInterrupt:
+        logger.info("\nDetenido por el usuario (Ctrl+C).")
+
+
+if __name__ == "__main__":
+    run()

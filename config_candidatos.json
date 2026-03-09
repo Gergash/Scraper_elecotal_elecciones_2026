@@ -132,7 +132,9 @@
     "pausa_entre_ciclos_segundos": 5
   },
   "urls_scraper": [
-    "https://resultados.registraduria.gov.co/",
-    "https://wapp.registraduria.gov.co/electoral/2026/congreso-de-la-republica/"
+    "https://escrutinioscongreso2026.registraduria.gov.co/actas-e14",
+    "https://escrutinioscongreso2026.registraduria.gov.co/actas-escrutinio",
+    "https://divulgacione14congreso.registraduria.gov.co/home",
+    "https://resultados.registraduria.gov.co/resultados/0/00/0?s=resultados-votes"
   ]
 }

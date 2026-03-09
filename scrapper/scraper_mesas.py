@@ -416,16 +416,16 @@ async def scrape_mesas(
                 logger.warning("Timeout en carga inicial, continuando...")
             _sleep(4, 2)
 
-            # ── Detectar selectores ──
+            # ── Detectar selector de corporación ──
             sels = await _detectar_selectores(page)
-            logger.info(f"Selectores detectados: {sels}")
-            if not sels:
-                logger.error("No se encontraron selectores. Verifica la estructura de la página.")
+            logger.info(f"Selectores detectados inicialmente: {sels}")
+            if "corporacion" not in sels:
+                logger.error("No se encontró el selector de corporación.")
                 await browser.close()
                 return csv_path
 
             # ── Detectar opciones de corporación ──
-            opts_corp = await _opciones_select(page, sels.get("corporacion", "select:nth-of-type(1)"))
+            opts_corp = await _opciones_select(page, sels["corporacion"])
             logger.info(f"Corporaciones disponibles: {opts_corp}")
 
             corp_camara = next(
@@ -436,6 +436,17 @@ async def scrape_mesas(
             )
             logger.info(f"Cámara: {corp_camara} | Senado: {corp_senado}")
 
+            # ── Seleccionar corporación y re-detectar todos los selectores dinámicos ──
+            await _seleccionar(page, sels["corporacion"], corp_camara or opts_corp[0]["value"])
+            _sleep(4, 1)
+            sels = await _detectar_selectores(page)
+            logger.info(f"Selectores tras seleccionar corporación: {sels}")
+
+            if "departamento" not in sels:
+                logger.error("No apareció el selector de departamento tras seleccionar corporación.")
+                await browser.close()
+                return csv_path
+
             # ── Iterar departamentos ──
             for depto in deptos:
                 candidatos_camara = CANDIDATOS_CAMARA.get(depto, [])
@@ -445,9 +456,9 @@ async def scrape_mesas(
 
                 logger.info(f"\n{'='*60}\nDepartamento: {depto}\n{'='*60}")
 
-                # Obtener opciones de departamento
+                # Asegurar corporación Cámara al inicio de cada depto
                 await _seleccionar(page, sels["corporacion"], corp_camara or opts_corp[0]["value"])
-                _sleep(3, 1)
+                _sleep(2, 1)
 
                 opts_depto = await _opciones_select(page, sels["departamento"])
                 depto_opt = next(

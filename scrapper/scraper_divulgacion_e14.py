@@ -31,18 +31,19 @@ from scrapper.config import (
 
 logger = logging.getLogger(__name__)
 
-URL_HOME = "https://divulgacione14congreso.registraduria.gov.co/home"
+URL_BASE = "https://divulgacione14congreso.registraduria.gov.co"
+URL_HOME = URL_BASE + "/home"
 
-# Secciones del paginador donde están VALLE (76), CALDAS (17), RISARALDA (66)
-# Página 01: primeros depts (incluye CALDAS)
-# Páginas 03, 04: VALLE, RISARALDA
+# Secciones del paginador donde están VALLE, CALDAS, RISARALDA
 PAGINAS_OBJETIVO = ["01", "03", "04"]
 
 TIMEOUT_MS = 25_000
 SLEEP_PAGE = 2.0
 SLEEP_MENU = 1.5
+SLEEP_DESCARGA = 1.0
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "backup"
+E14_DESCARGA_DIR = OUTPUT_DIR / "e14_descargas"
 
 CSV_COLS = [
     "CORPORACION",
@@ -85,13 +86,19 @@ def _extraer_pct(texto: str) -> str:
 
 async def _click_menu(page: Page, opcion: str) -> bool:
     """Click en menú SENADO o CAMARA."""
+    target = opcion.strip().upper()
     try:
-        selector = f'div.menu .item:has-text("{opcion.strip().upper()}")'
-        el = await page.wait_for_selector(selector, timeout=5000)
-        if el:
-            await el.click()
-            await page.wait_for_timeout(int(SLEEP_MENU * 1000))
-            return True
+        # Esperar a que el menú esté renderizado (Angular puede tardar en paralelo)
+        await page.wait_for_selector("div.menu .item", timeout=12000)
+        items = await page.query_selector_all("div.menu .item")
+        for item in items:
+            txt = (await item.inner_text() or "").strip().upper()
+            if txt == target:
+                await item.click()
+                await page.wait_for_timeout(int(SLEEP_MENU * 1000))
+                logger.debug(f"Menú '{target}' seleccionado.")
+                return True
+        logger.debug(f"Menú '{target}' no encontrado entre {[( await i.inner_text()) for i in items]}")
     except Exception as e:
         logger.debug(f"Error click menú {opcion}: {e}")
     return False
@@ -175,6 +182,171 @@ async def _obtener_todas_filas_por_paginas(
 
 
 # ──────────────────────────────────────────────
+# Descarga de E14 por departamento
+# ──────────────────────────────────────────────
+
+
+def _es_enlace_e14(href: str) -> bool:
+    """Determina si un href parece ser un E14 o acta descargable."""
+    if not href or not isinstance(href, str):
+        return False
+    h = href.lower().strip()
+    if h.endswith(".pdf"):
+        return True
+    if ".pdf?" in h or "acta" in h or "e14" in h or "e-14" in h:
+        return True
+    if "descargar" in h or "download" in h:
+        return True
+    return False
+
+
+async def _enlaces_e14_en_pagina(page: Page) -> List[tuple]:
+    """Obtiene (href, texto) de enlaces que parecen E14/acta en la página actual."""
+    seen: set = set()
+    out: List[tuple] = []
+    try:
+        links = await page.query_selector_all('a[href]')
+        for a in links:
+            href = await a.get_attribute("href")
+            if not _es_enlace_e14(href):
+                continue
+            href = href or ""
+            if href in seen:
+                continue
+            seen.add(href)
+            text = (await a.inner_text() or "").strip()[:200]
+            out.append((href, text))
+        # Filas de tabla con enlace tipo E14
+        rows = await page.query_selector_all(".tbody .columns.data-row a[href]")
+        for a in rows:
+            href = await a.get_attribute("href")
+            if not href or not _es_enlace_e14(href) or href in seen:
+                continue
+            seen.add(href)
+            text = (await a.inner_text() or "").strip()[:200]
+            out.append((href, text))
+    except Exception as e:
+        logger.debug(f"Error recogiendo enlaces E14: {e}")
+    return out
+
+
+async def _enlaces_subpaginas(page: Page) -> List[tuple]:
+    """En la página de departamento, enlaces de la tabla que llevan a subpáginas (municipio/zona/mesa)."""
+    out: List[tuple] = []
+    try:
+        rows = await page.query_selector_all(".tbody .columns.data-row .td.departamento a[href], .tbody .columns.data-row .td a[href]")
+        for a in rows:
+            href = await a.get_attribute("href")
+            if not href or href in {x for x, _ in out}:
+                continue
+            if _es_enlace_e14(href):
+                continue
+            text = (await a.inner_text() or "").strip()[:200]
+            out.append((href, text))
+    except Exception as e:
+        logger.debug(f"Error recogiendo subpáginas: {e}")
+    return out
+
+
+async def _descargar_e14_departamento(
+    page: Page,
+    corp: str,
+    fila: FilaDepartamento,
+    dir_base: Path,
+    max_descargas: int = 5000,
+    seguir_subpaginas: bool = True,
+) -> int:
+    """
+    Navega a la página del departamento (URL_BASE + href) y descarga
+    todos los E14 encontrados. Si seguir_subpaginas=True, entra en cada
+    enlace de la tabla (municipio/zona/mesa) y descarga E14 allí.
+    """
+    if not fila.href or not fila.href.strip():
+        return 0
+    url_depto = URL_BASE + fila.href if fila.href.startswith("/") else (URL_BASE + "/" + fila.href)
+    depto_nombre = re.sub(r"[^\w\s-]", "", fila.departamento.strip()).replace(" ", "_")
+    carpeta = dir_base / corp.upper().replace(" ", "_") / depto_nombre
+    carpeta.mkdir(parents=True, exist_ok=True)
+
+    descargados = 0
+    try:
+        logger.info(f"    Navegando a {url_depto} ...")
+        await page.goto(url_depto, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
+        await page.wait_for_timeout(int(SLEEP_PAGE * 1000))
+
+        enlaces = await _enlaces_e14_en_pagina(page)
+
+        # Si no hay E14 directos, intentar subpáginas (tabla municipio/zona/mesa)
+        if seguir_subpaginas and not enlaces:
+            subpaginas = await _enlaces_subpaginas(page)
+            for sub_href, sub_text in subpaginas:
+                if descargados >= max_descargas:
+                    break
+                sub_url = sub_href if sub_href.startswith("http") else (URL_BASE + (sub_href if sub_href.startswith("/") else "/" + sub_href))
+                try:
+                    await page.goto(sub_url, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
+                    await page.wait_for_timeout(500)
+                    sub_enlaces = await _enlaces_e14_en_pagina(page)
+                    for href, texto in sub_enlaces:
+                        if descargados >= max_descargas:
+                            break
+                        full_url = href if href.startswith("http") else (URL_BASE + (href if href.startswith("/") else "/" + href))
+                        try:
+                            response = await page.request.get(full_url, timeout=15000)
+                            body = await response.body() if response.status == 200 else None
+                            if not body:
+                                continue
+                            safe_name = re.sub(r"[^\w\.\-]", "_", (sub_text + "_" + (texto or "e14"))[:80]) or "e14"
+                            if not safe_name.lower().endswith(".pdf"):
+                                safe_name += ".pdf"
+                            path = carpeta / f"{descargados:04d}_{safe_name}"
+                            path.write_bytes(body)
+                            descargados += 1
+                            logger.info(f"    Descargado: {path.name}")
+                        except Exception as e:
+                            logger.debug(f"    No descargar {full_url}: {e}")
+                        await page.wait_for_timeout(int(SLEEP_DESCARGA * 1000))
+                except Exception as e:
+                    logger.debug(f"    Subpágina {sub_url}: {e}")
+                await page.goto(url_depto, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
+                await page.wait_for_timeout(500)
+
+        if not enlaces and descargados == 0:
+            debug_html = OUTPUT_DIR / "debug_departamento_e14.html"
+            if not debug_html.exists():
+                content = await page.content()
+                debug_html.write_bytes(content.encode("utf-8"))
+                logger.info(f"    Sin enlaces E14; HTML en {debug_html} para revisión.")
+
+        for href, texto in enlaces:
+            if descargados >= max_descargas:
+                break
+            full_url = href if href.startswith("http") else (URL_BASE + (href if href.startswith("/") else "/" + href))
+            try:
+                # Usar request del contexto para GET y guardar cuerpo si es PDF
+                response = await page.request.get(full_url, timeout=15000)
+                if response.status != 200:
+                    continue
+                ct = (response.headers.get("content-type") or "").lower()
+                body = await response.body()
+                if not body:
+                    continue
+                safe_name = re.sub(r"[^\w\.\-]", "_", (texto or "e14")[:80]) or "e14"
+                if not safe_name.lower().endswith(".pdf"):
+                    safe_name += ".pdf"
+                path = carpeta / f"{descargados:04d}_{safe_name}"
+                path.write_bytes(body)
+                descargados += 1
+                logger.info(f"    Descargado: {path.name}")
+            except Exception as e:
+                logger.debug(f"    No se pudo descargar {full_url}: {e}")
+            await page.wait_for_timeout(int(SLEEP_DESCARGA * 1000))
+    except Exception as e:
+        logger.warning(f"    Error en departamento {fila.departamento}: {e}")
+    return descargados
+
+
+# ──────────────────────────────────────────────
 # Scraper principal
 # ──────────────────────────────────────────────
 
@@ -185,11 +357,13 @@ async def scrape_divulgacion_e14(
     paginas: Optional[List[str]] = None,
     headless: bool = False,
     csv_path: Optional[Path] = None,
+    descargar_e14: bool = True,
 ) -> Path:
     """
     Scraping de divulgacione14congreso/home.
-    Navega entre SENADO/CAMARA y paginas 01, 03, 04.
+    Navega entre SENADO/CAMARA y páginas 01, 03, 04.
     Extrae progreso de mesas para VALLE, CALDAS, RISARALDA.
+    Si descargar_e14=True, entra a cada /departamento/XX y descarga los E14 encontrados.
     """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     if csv_path is None:
@@ -205,8 +379,8 @@ async def scrape_divulgacion_e14(
     )
 
     existe = csv_path.exists()
-    f = open(csv_path, "a", newline="", encoding="utf-8-sig")
-    w = csv.DictWriter(f, fieldnames=CSV_COLS, extrasaction="ignore")
+    csv_file = open(csv_path, "a", newline="", encoding="utf-8-sig")
+    w = csv.DictWriter(csv_file, fieldnames=CSV_COLS, extrasaction="ignore")
     if not existe:
         w.writeheader()
 
@@ -235,7 +409,7 @@ async def scrape_divulgacion_e14(
                 await page.goto(URL_HOME, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
             except PlaywrightTimeout:
                 logger.warning("Timeout en carga inicial, continuando...")
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(5000)
 
             for corp in corps:
                 logger.info(f"\n{'='*50}\nCorporación: {corp}\n{'='*50}")
@@ -254,18 +428,28 @@ async def scrape_divulgacion_e14(
                 )
 
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                for f in filas:
+                for fila in filas:
                     w.writerow({
                         "CORPORACION": corp,
-                        "DEPARTAMENTO": f.departamento,
-                        "ESPERADOS": f.esperados,
-                        "PUBLICADOS": f.publicados,
-                        "AVANCE_PCT": f.avance_pct,
-                        "FALTANTES": f.faltantes,
-                        "HREF": f.href,
+                        "DEPARTAMENTO": fila.departamento,
+                        "ESPERADOS": fila.esperados,
+                        "PUBLICADOS": fila.publicados,
+                        "AVANCE_PCT": fila.avance_pct,
+                        "FALTANTES": fila.faltantes,
+                        "HREF": fila.href,
                         "FECHA_EXTRACCION": now,
                     })
-                f.flush()
+                csv_file.flush()
+
+                # Descargar E14 de cada departamento (VALLE, CALDAS, RISARALDA)
+                if descargar_e14 and filas:
+                    E14_DESCARGA_DIR.mkdir(parents=True, exist_ok=True)
+                    for fila in filas:
+                        n = await _descargar_e14_departamento(
+                            page, corp, fila, E14_DESCARGA_DIR
+                        )
+                        if n > 0:
+                            logger.info(f"  {fila.departamento}: {n} E14 descargados.")
 
     except Exception as e:
         logger.error(f"Error en scraper divulgación E14: {e}")
@@ -276,7 +460,7 @@ async def scrape_divulgacion_e14(
                 await browser.close()
             except Exception:
                 pass
-        f.close()
+        csv_file.close()
 
     logger.info(f"Resultados guardados en {csv_path}")
     return csv_path
@@ -286,6 +470,7 @@ def run_sync(
     corporaciones: Optional[List[str]] = None,
     departamentos_objetivo: Optional[List[str]] = None,
     headless: bool = False,
+    descargar_e14: bool = True,
 ) -> Path:
     """Wrapper síncrono."""
     return asyncio.run(
@@ -293,6 +478,7 @@ def run_sync(
             corporaciones=corporaciones,
             departamentos_objetivo=departamentos_objetivo,
             headless=headless,
+            descargar_e14=descargar_e14,
         )
     )
 

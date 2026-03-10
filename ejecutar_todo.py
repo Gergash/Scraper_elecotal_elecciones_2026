@@ -58,13 +58,14 @@ async def _tarea_mesas(deptos=None, headless=False, reanudar=True):
     )
 
 
-async def _tarea_divulgacion(headless=False):
-    """Tarea: scraper divulgacione14congreso (SENADO/CAMARA, págs 01/03/04)"""
+async def _tarea_divulgacion(headless=False, descargar_e14=True):
+    """Tarea: scraper divulgacione14congreso (SENADO/CAMARA, págs 01/03/04) + descarga E14 por mesa"""
     await scrape_divulgacion_e14(
         corporaciones=["SENADO", "CAMARA"],
         departamentos_objetivo=None,  # usa VALLE, CALDAS, RISARALDA de config
         paginas=["01", "03", "04"],
         headless=headless,
+        descargar_e14=descargar_e14,
     )
 
 
@@ -91,7 +92,10 @@ async def main(args):
         )),
     ]
     if not getattr(args, "sin_divulgacion", False):
-        tareas.append(asyncio.create_task(_tarea_divulgacion(headless=args.headless)))
+        tareas.append(asyncio.create_task(_tarea_divulgacion(
+            headless=args.headless,
+            descargar_e14=not getattr(args, "sin_descargar_e14", False),
+        )))
 
     try:
         await asyncio.gather(*tareas)
@@ -117,6 +121,7 @@ def run():
     parser.add_argument("--headless", action="store_true", help="Navegador sin ventana")
     parser.add_argument("--sin-reanudar", action="store_true", help="Mesas: empezar desde cero")
     parser.add_argument("--sin-divulgacion", action="store_true", help="No ejecutar scraper divulgación E14")
+    parser.add_argument("--sin-descargar-e14", action="store_true", help="Divulgación E14: solo tabla, no descargar PDFs por mesa")
     args = parser.parse_args()
 
     try:
